@@ -1,200 +1,222 @@
+// Aluno: Anthony Silva
+
 #include <GL/glut.h>
 #include <GL/freeglut_ext.h>
-
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "gl_canvas2d.h"
 #include "Vector2.h"
+#include "gui.h"
+#include "nave.h"
+#include "tiro.h"
+#include "inimigo.h"
 
 #define _CRT_SECURE_NO_WARNINGS
 #pragma warning(disable:4996)
 
-int screenWidth = 500, screenHeight = 500;
-int opcao = 51;
+int screenWidth = 800, screenHeight = 600;
 int mouseX, mouseY;
 
-Vector2 rectPos(250.0f, 250.0f);
-float rectAngulo = 0.0f;
-float rectVelocidade = 10.0f;
-float rectVelRotacao = 0.1f;
+enum GameState {
+    MENU,
+    PLAYING,
+    PAUSED,
+    GAME_OVER
+};
 
-void render()
-{
-    if (opcao == 49)
-    {
-        CV::clear(1.0f, 1.0f, 1.0f);
+GameState estadoAtual = MENU;
 
-        Vector2 centro((float)screenWidth / 2.0f, (float)screenHeight / 2.0f);
-        Vector2 ref(150.0f, 0.0f);
+Nave* player = nullptr;
+GerenciadorTiros* armamento = nullptr;
+GerenciadorInimigos* horda = nullptr;
 
-        CV::color(1.0f, 0.0f, 0.0f);
-        Vector2 pontaRef = centro + ref;
-        CV::line(centro, pontaRef);
+GuiManager* guiMenu = nullptr;
+GuiManager* guiPause = nullptr;
+GuiManager* guiGameOver = nullptr;
 
-        Vector2 mousePos((float)mouseX, (float)mouseY);
-        Vector2 vetorMouse = mousePos - centro;
+Botao* btnIniciar = nullptr;
+Botao* btnContinuar = nullptr;
+Botao* btnSair = nullptr;
+Botao* btnReiniciar = nullptr;
 
-        CV::color(0.0f, 0.0f, 1.0f);
-        CV::line(centro, mousePos);
+float cameraOffsetY = 0.0f;
+int score = 0;
+bool teclas[300] = { false };
 
-        float anguloRad = atan2f(vetorMouse.y, vetorMouse.x);
-        float anguloDeg = anguloRad * 180.0f / PI;
+void atualizarMovimento() {
+    if (player == nullptr) return;
 
-        if (anguloDeg < 0) {
-            anguloDeg += 360.0f;
-        }
+    if (teclas[201]) player->moverFrente(1.0f, 0, screenHeight / 2);
+    if (teclas[203]) player->moverFrente(-1.0f, 0, screenHeight / 2);
+    if (teclas[200]) player->moverLado(-1.0f, 0, screenWidth);
+    if (teclas[202]) player->moverLado(1.0f, 0, screenWidth);
+}
 
-        char texto[100];
-        sprintf(texto, "Angulo: %.3f", anguloDeg);
-        CV::color(0.0f, 0.0f, 0.0f);
-        CV::text(20, 20, texto);
+void processarColisoes() {
+    if (armamento == nullptr || horda == nullptr || player == nullptr) return;
 
-        if (vetorMouse.length() > 0)
-        {
-            Vector2 direcao = vetorMouse;
-            direcao.normalize();
+    Inimigo* inimigos = horda->getInimigos();
+    int maxInimigos = horda->getMaxInimigos();
+    Vector2 posPlayer = player->getPos();
 
-            Vector2 p1(
-                mousePos.x - direcao.x * 20 - direcao.y * 10,
-                mousePos.y - direcao.y * 20 + direcao.x * 10
-            );
-            Vector2 p2(
-                mousePos.x - direcao.x * 20 + direcao.y * 10,
-                mousePos.y - direcao.y * 20 - direcao.x * 10
-            );
+    for (int i = 0; i < maxInimigos; i++) {
+        if (inimigos[i].isAtivo()) {
+            if (armamento->verificarColisao(inimigos[i].getPos(), inimigos[i].getRaio())) {
+                inimigos[i].desativar();
+                score += 100;
+            }
 
-            float vx[3] = { mousePos.x, p1.x, p2.x };
-            float vy[3] = { mousePos.y, p1.y, p2.y };
-            CV::triangleFill(vx, vy);
+            Vector2 diffCorpo = posPlayer - inimigos[i].getPos();
+            if (diffCorpo.length() <= (inimigos[i].getRaio() + 15.0f)) {
+                estadoAtual = GAME_OVER;
+                return;
+            }
         }
     }
 
-    if (opcao == 50)
-    {
-        CV::clear(1.0f, 1.0f, 1.0f);
-
-        Vector2 vOriginal[4];
-        vOriginal[0].set(-50.0f, -25.0f);
-        vOriginal[1].set(50.0f, -25.0f);
-        vOriginal[2].set(50.0f, 25.0f);
-        vOriginal[3].set(-50.0f, 25.0f);
-
-        float vx[4], vy[4];
-
-		//calcula os angulos uma vez fora do loop para otimizar o codigo ja que todos os vertices usam o mesmo angulo
-        float cosseno = cosf(rectAngulo);
-        float seno = sinf(rectAngulo);
-
-		//rotaciona os vertices do retangulo usando a formula de rotacao 2D: x' = x * cos(theta) - y * sin(theta) | y' = x * sin(theta) + y * cos(theta)
-        for (int i = 0; i < 4; i++)
-        {
-            float rx = vOriginal[i].x * cosseno - vOriginal[i].y * seno;
-            float ry = vOriginal[i].x * seno + vOriginal[i].y * cosseno;
-
-            vx[i] = rx + rectPos.x;
-            vy[i] = ry + rectPos.y;
-        }
-
-
-		//desenha o retangulo usando os vertices rotacionados
-        CV::color(0.0f, 0.0f, 0.0f);
-        CV::text(20, 40, "Setas: Mover | Espaco: Girar");
-        CV::text(20, 20, "Tecla 1 ou 2 para trocar exercicio");
-        CV::color(0.0f, 0.5f, 0.0f);
-        CV::polygon(vx, vy, 4);
-
-		//desenha a linha de direcao do retangulo
-        Vector2 dir(cosseno, seno);
-        CV::color(1.0f, 0.0f, 0.0f);
-        CV::line(rectPos, rectPos + (dir * 60.0f));
-    }
-    if(opcao == 51)
-    {
-        CV::clear(1.0f, 1.0f, 1.0f);
-
-        Vector2 vOriginal[4];
-        vOriginal[0].set(-100.0f, -25.0f);
-        vOriginal[1].set(50.0f, -25.0f);
-        vOriginal[2].set(50.0f, 25.0f);
-        vOriginal[3].set(-50.0f, 25.0f);
-
-        float vx[4], vy[4];
-
-        //calcula os angulos uma vez fora do loop para otimizar o codigo ja que todos os vertices usam o mesmo angulo
-        float cosseno = cosf(rectAngulo);
-        float seno = sinf(rectAngulo);
-
-        for (int i = 0; i < 4; i++)
-        {
-            float rx = vOriginal[i].x * cosseno - vOriginal[i].y * seno;
-            float ry = vOriginal[i].x * seno + vOriginal[i].y * cosseno;
-
-            vx[i] = rx + rectPos.x;
-            vy[i] = ry + rectPos.y;
-        }
-
-
-        //desenha o retangulo usando os vertices rotacionados
-        CV::color(0.0f, 0.0f, 0.0f);
-        CV::text(20, 40, "Setas: Mover | Espaco: Girar");
-        CV::text(20, 20, "Tecla 1 ou 2 para trocar exercicio");
-        CV::color(0.0f, 0.5f, 0.0f);
-        CV::polygon(vx, vy, 4);
-
-        //desenha a linha de direcao do retangulo
-        Vector2 dir(cosseno, seno);
-        CV::color(1.0f, 0.0f, 0.0f);
-        CV::line(rectPos, rectPos + (dir * 60.0f));
-
-     
-	}
-
-    Sleep(10);
-}
-
-void keyboard(int key)
-{
-    switch (key)
-    {
-    case 27:
-        exit(0);
-        break;
-    case 49:
-    case 50:
-    case 51:
-        opcao = key;
-        break;
-    case 201: // Seta Cima
-        rectPos.y += rectVelocidade;
-        break;
-    case 203: // Seta Baixo
-        rectPos.y -= rectVelocidade;
-        break;
-    case 200: // Seta Esquerda
-        rectPos.x -= rectVelocidade;
-        break;
-    case 202: // Seta Direita
-        rectPos.x += rectVelocidade;
-        break;
-    case 32: // Espaco
-        rectAngulo += rectVelRotacao;
-        break;
+    if (horda->getTirosInimigos()->verificarColisao(posPlayer, 15.0f)) {
+        estadoAtual = GAME_OVER;
     }
 }
 
-void keyboardUp(int key)
-{
+void render() {
+    CV::clear(0.05f, 0.05f, 0.1f);
+
+    if (estadoAtual == MENU) {
+        CV::color(1.0f, 1.0f, 1.0f);
+        CV::text(screenWidth / 2 - 80, 100, "GALAGA ENGINE C++");
+        if (guiMenu != nullptr) guiMenu->renderAll();
+    }
+    else if (estadoAtual == PLAYING) {
+        atualizarMovimento();
+        cameraOffsetY -= 1.0f;
+
+        CV::color(1.0f, 1.0f, 1.0f);
+        for (int i = 0; i < 50; i++) {
+            float starX = (float)((i * 87) % screenWidth);
+            float starY = (float)(((i * 123) + (int)cameraOffsetY) % (screenHeight * 10));
+            if (starY > 0 && starY < screenHeight) CV::point(starX, starY);
+        }
+
+        if (horda != nullptr) horda->atualizar(screenWidth, screenHeight, score);
+        if (armamento != nullptr) armamento->atualizar(screenHeight);
+
+        processarColisoes();
+
+        if (horda != nullptr) horda->desenhar();
+        if (armamento != nullptr) armamento->desenhar();
+        if (player != nullptr) player->desenhar();
+
+        CV::color(1.0f, 1.0f, 1.0f);
+        char textoPlacar[50];
+        sprintf(textoPlacar, "SCORE: %04d", score);
+        CV::text(20, screenHeight - 30, textoPlacar);
+    }
+    else if (estadoAtual == PAUSED) {
+        CV::color(1.0f, 1.0f, 1.0f);
+        CV::text(screenWidth / 2 - 30, 100, "PAUSED");
+        if (guiPause != nullptr) guiPause->renderAll();
+    }
+    else if (estadoAtual == GAME_OVER) {
+        CV::color(1.0f, 0.0f, 0.0f);
+        CV::text(screenWidth / 2 - 40, 100, "GAME OVER");
+        CV::color(1.0f, 1.0f, 1.0f);
+        char textoPlacar[50];
+        sprintf(textoPlacar, "FINAL SCORE: %04d", score);
+        CV::text(screenWidth / 2 - 60, 130, textoPlacar);
+        if (guiGameOver != nullptr) guiGameOver->renderAll();
+    }
+
+    Sleep(16);
 }
 
-void mouse(int button, int state, int wheel, int direction, int x, int y)
-{
+void keyboard(int key) {
+    if (key < 300) teclas[key] = true;
+    if (key == 27) exit(0);
+
+    if (key == 'p' || key == 'P') {
+        if (estadoAtual == PLAYING) estadoAtual = PAUSED;
+        else if (estadoAtual == PAUSED) estadoAtual = PLAYING;
+    }
+
+    if (estadoAtual == PLAYING) {
+        if (key == 32) {
+            if (player != nullptr && armamento != nullptr) {
+                armamento->atirar(player->getPos());
+            }
+        }
+    }
+}
+
+void keyboardUp(int key) {
+    if (key < 300) teclas[key] = false;
+}
+
+void resetarJogo() {
+    delete player;
+    delete armamento;
+    delete horda;
+    player = new Nave(screenWidth / 2.0f, 100.0f);
+    armamento = new GerenciadorTiros();
+    horda = new GerenciadorInimigos();
+    score = 0;
+    cameraOffsetY = 0.0f;
+}
+
+void mouse(int button, int state, int wheel, int direction, int x, int y) {
     mouseX = x;
     mouseY = y;
+
+    if (state == 0) {
+        if (estadoAtual == MENU) {
+            if (guiMenu != nullptr && guiMenu->getBotaoClicado(x, y) == btnIniciar) {
+                resetarJogo();
+                estadoAtual = PLAYING;
+            }
+        }
+        else if (estadoAtual == PAUSED) {
+            if (guiPause != nullptr) {
+                Botao* clicado = guiPause->getBotaoClicado(x, y);
+                if (clicado == btnContinuar) estadoAtual = PLAYING;
+                else if (clicado == btnSair) exit(0);
+            }
+        }
+        else if (estadoAtual == GAME_OVER) {
+            if (guiGameOver != nullptr && guiGameOver->getBotaoClicado(x, y) == btnReiniciar) {
+                resetarJogo();
+                estadoAtual = PLAYING;
+            }
+        }
+    }
 }
 
-int main(void)
-{
-    CV::init(&screenWidth, &screenHeight, "Exercicios - Digite 1 OU 2");
+int main(void) {
+    guiMenu = new GuiManager();
+    btnIniciar = new Botao(screenWidth / 2.0f - 100.0f, screenHeight / 2.0f, 200.0f, 50.0f, "INICIAR JOGO");
+    guiMenu->addBotao(btnIniciar);
+
+    guiPause = new GuiManager();
+    btnContinuar = new Botao(screenWidth / 2.0f - 100.0f, screenHeight / 2.0f - 30.0f, 200.0f, 50.0f, "CONTINUAR");
+    btnSair = new Botao(screenWidth / 2.0f - 100.0f, screenHeight / 2.0f + 40.0f, 200.0f, 50.0f, "SAIR");
+    guiPause->addBotao(btnContinuar);
+    guiPause->addBotao(btnSair);
+
+    guiGameOver = new GuiManager();
+    btnReiniciar = new Botao(screenWidth / 2.0f - 100.0f, screenHeight / 2.0f, 200.0f, 50.0f, "TENTAR NOVAMENTE");
+    guiGameOver->addBotao(btnReiniciar);
+
+    CV::init(&screenWidth, &screenHeight, "Trabalho 2 - Anthony Silva");
     CV::run();
+
+    delete btnIniciar;
+    delete btnContinuar;
+    delete btnSair;
+    delete btnReiniciar;
+    delete guiMenu;
+    delete guiPause;
+    delete guiGameOver;
+    delete player;
+    delete armamento;
+    delete horda;
+    return 0;
 }

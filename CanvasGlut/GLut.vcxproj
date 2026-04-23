@@ -170,10 +170,18 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="gl_canvas2d.cpp" />
+    <ClCompile Include="gui.cpp" />
+    <ClCompile Include="inimigo.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="nave.cpp" />
+    <ClCompile Include="tiro.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="gl_canvas2d.h" />
+    <ClInclude Include="gui.h" />
+    <ClInclude Include="inimigo.h" />
+    <ClInclude Include="nave.h" />
+    <ClInclude Include="tiro.h" />
     <ClInclude Include="Vector2.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
